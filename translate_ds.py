@@ -10,10 +10,9 @@ key = os.getenv("MARITALK_KEY")
 
 model = maritalk.MariTalk(key=key)
 
-df_name = 'ds.parquet'
+df_name = 'ds_001.parquet'
 
 df = pd.read_parquet(f'data/raw/{df_name}')
-df = df.head(1)  # Amostar 10 conversas
 
 # Extrair as mensagens de dentro da conversa
 df_messages = df.explode('messages')
