@@ -2,6 +2,7 @@ import pandas as pd
 import maritalk
 import dotenv
 import os
+import re
 import time
 
 dotenv.load_dotenv()
@@ -10,7 +11,7 @@ key = os.getenv("MARITALK_KEY")
 
 model = maritalk.MariTalk(key=key)
 
-df_name = 'ds_001.parquet'
+df_name = 'ds_002.parquet'
 
 df = pd.read_parquet(f'data/raw/{df_name}')
 
@@ -22,6 +23,9 @@ df_messages['text'] = df_messages['messages'].apply(lambda x: x['text'])
 df_messages['senderWorkerId'] = df_messages['messages'].apply(lambda x: x['senderWorkerId'])
 df_messages['messageID'] = df_messages['messages'].apply(lambda x: x['messageId'])
 df_messages = df_messages.drop('messages', axis=1)
+
+total_messages = len(df_messages) 
+current_message_count = 0
 
 print('Mensagens originais antes da tradução:')
 print("_"*80)
@@ -45,23 +49,14 @@ failure_count = 0
 
 failure_df = pd.DataFrame(columns=['conversationId', 'messageID', 'text'])
 
-for index, row in df_messages.iterrows():
-    success = False
-    max_attempts = 2 
+# Verificações para traduções customizadas (não realizaveis com qualidade pelo modelo)
+
+def _translate_remaining(text, row):
+    prompt = template.format(text)
+    max_attempts = 2
     attempts = 0
-    
-    prompt = template.format(row['text'])
 
-    if row['text'].startswith('@'):
-        print(f"O texto começa com '@': {row['text']} -> Arquivando mensagem sem tradução e salvando no log de falhas")
-        failure_count += 1
-        translated_text.append(row['text'])
-        new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': row['text']}
-        failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
-        failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', index=False)
-        continue
-
-    while not success and attempts < max_attempts:
+    while attempts < max_attempts:
         try:
             answer = model.generate(
                 prompt,
@@ -71,27 +66,105 @@ for index, row in df_messages.iterrows():
             )
 
             clean_answer = answer.strip().split('\n')[0]
+            return clean_answer
 
-            translated_text.append(clean_answer)
-            success = True
-            success_count += 1
-            print(f"Tradução bem-sucedida: {row['text']} -> {clean_answer}")
         except Exception as e:
             attempts += 1
-            print(f"Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}")
+            print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {text}. Tentativa {attempts}. Erro: {e}")
             time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
-    time.sleep(5)
+    new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': text}
+    failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
+    failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', index=False)
 
-    if not success:
-        translated_text.append(row['text'])
-        failure_count += 1
-        new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': row['text']}
-        failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
-        failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', index=False)
+    return text
 
-    df_messages.loc[index, 'text_translated'] = translated_text[-1]
-    df_messages.to_parquet(f'data/processed/interim/interim_translated_{df_name[:-8]}.parquet', index=False)
+def _custom_translation(text, row):
+    text = text.strip()
+
+    # Caso 1 -> @123456
+    if text.startswith("@") and text[1:].isdigit() and len(text.split()) == 1:
+        return text 
+
+    # Caso 2 -> Or @123456
+    elif text.lower().split()[0] == "or" and text.split()[1].startswith('@') and text.split()[1][1:].isdigit() and len(text.split()) == 2:
+        return "Ou " + text.split()[1]
+
+
+    # Caso 3 -> And @123456
+    elif text.lower().split()[0] == "and" and text.split()[1].startswith('@') and text.split()[1][1:].isdigit() and len(text.split()) == 2:
+        return "E " + text.split()[1]
+
+    # Caso 4 -> ! ou ? ou . ou " " ou ""
+    elif re.match(r"^[!?. \"\"]+$", text):
+        return text
+
+    # Caso 5 -> hello ou Hello ou HELLO ou H E L L O...
+    elif text.lower().replace(" ", "") == "hello":
+        return "Olá"
+
+    # Caso 6 -> @123456 is a great movie.
+    elif text.startswith("@") and text.split()[0][1:].isdigit():
+        text_after_number = " ".join(text.split()[1:])
+        translated_text_after_number = _translate_remaining(text_after_number, row)
+        return text.split()[0] + " " + translated_text_after_number
+
+    # Não se aplica a nenhuma das condições acima
+    else:
+        return None
+
+for index, row in df_messages.iterrows():
+    success = False
+    max_attempts = 2 
+    attempts = 0
+
+    # Verificação da necessidade de tradução customizada
+    custom_translated = _custom_translation(row['text'], row)
+
+    if custom_translated:
+        translated_text.append(custom_translated)
+        current_message_count += 1
+        success_count += 1
+        print(f"({current_message_count}/{total_messages}) Tradução customizada: {row['text']} -> {custom_translated}")
+        df_messages.loc[index, 'text_translated'] = translated_text[-1]
+        df_messages.to_parquet(f'data/processed/interim/interim_translated_{df_name[:-8]}.parquet', index=False)
+        
+    else:
+        prompt = template.format(row['text'])
+
+        while not success and attempts < max_attempts:
+            try:
+                answer = model.generate(
+                    prompt,
+                    chat_mode=False,
+                    do_sample=False,
+                    max_tokens=4096
+                )
+
+                clean_answer = answer.strip().split('\n')[0]
+
+                translated_text.append(clean_answer)
+                success = True
+                success_count += 1
+                current_message_count += 1
+                print(f"({current_message_count}/{total_messages}) Tradução bem-sucedida: {row['text']} -> {clean_answer}")
+            except Exception as e:
+                attempts += 1
+                print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}")
+                time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
+
+        time.sleep(5)
+
+        if not success:
+            translated_text.append(row['text'])
+            failure_count += 1
+            current_message_count += 1
+            new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': row['text']}
+            failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
+            failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', index=False)
+
+        df_messages.loc[index, 'text_translated'] = translated_text[-1]
+        df_messages.to_parquet(f'data/processed/interim/interim_translated_{df_name[:-8]}.parquet', index=False)
 
 # Adicionando a tradução ao dataframe df_messages
 df_messages['text_translated'] = translated_text
