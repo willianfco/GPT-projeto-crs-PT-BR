@@ -66,6 +66,8 @@ def _translate_remaining(text, row):
             )
 
             clean_answer = answer.strip().split('\n')[0]
+            time.sleep(5)
+
             return clean_answer
 
         except Exception as e:
@@ -81,19 +83,21 @@ def _translate_remaining(text, row):
 
 def _custom_translation(text, row):
     text = text.strip()
+    split_text = text.split()
 
     # Caso 1 -> @123456
-    if text.startswith("@") and text[1:].isdigit() and len(text.split()) == 1:
+    if text.startswith("@") and text[1:].isdigit() and len(split_text) == 1:
         return text 
 
     # Caso 2 -> Or @123456
-    elif text.lower().split()[0] == "or" and text.split()[1].startswith('@') and text.split()[1][1:].isdigit() and len(text.split()) == 2:
-        return "Ou " + text.split()[1]
-
+    if len(split_text) >= 2:
+        if split_text[0].lower() == "or" and split_text[1].startswith('@') and split_text[1][1:].isdigit():
+            return "Ou " + split_text[1]
 
     # Caso 3 -> And @123456
-    elif text.lower().split()[0] == "and" and text.split()[1].startswith('@') and text.split()[1][1:].isdigit() and len(text.split()) == 2:
-        return "E " + text.split()[1]
+    if len(split_text) >= 2:
+        if split_text[0].lower() == "and" and split_text[1].startswith('@') and split_text[1][1:].isdigit():
+            return "E " + split_text[1]
 
     # Caso 4 -> ! ou ? ou . ou " " ou ""
     elif re.match(r"^[!?. \"\"]+$", text):
@@ -104,10 +108,10 @@ def _custom_translation(text, row):
         return "Olá"
 
     # Caso 6 -> @123456 is a great movie.
-    elif text.startswith("@") and text.split()[0][1:].isdigit():
-        text_after_number = " ".join(text.split()[1:])
+    elif text.startswith("@") and len(split_text) > 1 and split_text[0][1:].isdigit():
+        text_after_number = " ".join(split_text[1:])
         translated_text_after_number = _translate_remaining(text_after_number, row)
-        return text.split()[0] + " " + translated_text_after_number
+        return split_text[0] + " " + translated_text_after_number
 
     # Não se aplica a nenhuma das condições acima
     else:
