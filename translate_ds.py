@@ -4,14 +4,17 @@ import dotenv
 import os
 import re
 import time
-
+from getpass import getpass
+from tqdm import tqdm
 dotenv.load_dotenv()
 
-key = os.getenv("MARITALK_KEY")
+# load key from marital_key.txt as string
+
+key = open('maritalk_key.txt', 'r').read()
 
 model = maritalk.MariTalk(key=key)
 
-df_name = 'ds_003.parquet'
+df_name = 'ds_004.parquet'
 
 df = pd.read_parquet(f'data/raw/{df_name}')
 
@@ -76,7 +79,7 @@ def _translate_remaining(text, row):
 
         except Exception as e:
             attempts += 1
-            print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {text}. Tentativa {attempts}. Erro: {e}")
+            # print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {text}. Tentativa {attempts}. Erro: {e}")
             time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
     new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': text}
@@ -122,7 +125,7 @@ def _custom_translation(text, row):
     else:
         return None
 
-for index, row in df_messages.iterrows():
+for index, row in tqdm(df_messages.iterrows(), total=total_messages):
     success = False
     max_attempts = 2 
     attempts = 0
@@ -138,7 +141,7 @@ for index, row in df_messages.iterrows():
         translated_text.append(custom_translated)
         current_message_count += 1
         success_count += 1
-        print(f"({current_message_count}/{total_messages}) Tradução customizada: {row['text']} -> {custom_translated}")
+        # print(f"({current_message_count}/{total_messages}) Tradução customizada: {row['text']} -> {custom_translated}")
         df_messages.loc[index, 'text_translated'] = translated_text[-1]
         df_messages.to_parquet(f'data/processed/interim/interim_translated_{df_name[:-8]}.parquet', index=False)
         
@@ -160,11 +163,11 @@ for index, row in df_messages.iterrows():
                 success = True
                 success_count += 1
                 current_message_count += 1
-                print(f"({current_message_count}/{total_messages}) Tradução bem-sucedida: {row['text']} -> {clean_answer}")
+                # print(f"({current_message_count}/{total_messages}) Tradução bem-sucedida: {row['text']} -> {clean_answer}")
                 
             except Exception as e:
                 attempts += 1
-                print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}")
+                # print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}")
                 time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
         time.sleep(5)
