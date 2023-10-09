@@ -11,21 +11,24 @@ key = os.getenv("MARITALK_KEY")
 
 model = maritalk.MariTalk(key=key)
 
-df_name = 'ds_002.parquet'
+df_name = 'ds_003.parquet'
 
 df = pd.read_parquet(f'data/raw/{df_name}')
 
+
 # Extrair as mensagens de dentro da conversa
 df_messages = df.explode('messages')
-
 df_messages['timeOffset'] = df_messages['messages'].apply(lambda x: x['timeOffset'])
 df_messages['text'] = df_messages['messages'].apply(lambda x: x['text'])
 df_messages['senderWorkerId'] = df_messages['messages'].apply(lambda x: x['senderWorkerId'])
 df_messages['messageID'] = df_messages['messages'].apply(lambda x: x['messageId'])
-df_messages = df_messages.drop('messages', axis=1)
+df_messages = df_messages.drop('messages', axis=1).reset_index()
+
+# Em caso de falha no meio da execucao, carregar o dataset interino
+# df_messages = pd.read_parquet('data/processed/interim/interim_translated_ds_002.parquet')
 
 total_messages = len(df_messages) 
-current_message_count = 0
+current_message_count = 0 # Ajuste em caso de treinamento interrompido e recuperado
 
 print('Mensagens originais antes da tradução:')
 print("_"*80)
@@ -52,6 +55,7 @@ failure_df = pd.DataFrame(columns=['conversationId', 'messageID', 'text'])
 # Verificações para traduções customizadas (não realizaveis com qualidade pelo modelo)
 
 def _translate_remaining(text, row):
+    global failure_df
     prompt = template.format(text)
     max_attempts = 2
     attempts = 0
@@ -78,6 +82,7 @@ def _translate_remaining(text, row):
     new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': text}
     failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
     failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', index=False)
+    #failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', mode='a', header=False, index=False) #-> Utilize em caso de treinamento interrompido
 
     return text
 
@@ -90,12 +95,12 @@ def _custom_translation(text, row):
         return text 
 
     # Caso 2 -> Or @123456
-    if len(split_text) >= 2:
+    if len(split_text) == 2:
         if split_text[0].lower() == "or" and split_text[1].startswith('@') and split_text[1][1:].isdigit():
             return "Ou " + split_text[1]
 
     # Caso 3 -> And @123456
-    if len(split_text) >= 2:
+    if len(split_text) == 2:
         if split_text[0].lower() == "and" and split_text[1].startswith('@') and split_text[1][1:].isdigit():
             return "E " + split_text[1]
 
@@ -121,8 +126,12 @@ for index, row in df_messages.iterrows():
     success = False
     max_attempts = 2 
     attempts = 0
+    
+    start_message_id = 0 # Componente para retomar treinamento interrompido
 
-    # Verificação da necessidade de tradução customizada
+    if row['messageID'] < start_message_id:
+        continue 
+
     custom_translated = _custom_translation(row['text'], row)
 
     if custom_translated:
@@ -152,6 +161,7 @@ for index, row in df_messages.iterrows():
                 success_count += 1
                 current_message_count += 1
                 print(f"({current_message_count}/{total_messages}) Tradução bem-sucedida: {row['text']} -> {clean_answer}")
+                
             except Exception as e:
                 attempts += 1
                 print(f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}")
@@ -166,6 +176,7 @@ for index, row in df_messages.iterrows():
             new_row = {'conversationId': row['conversationId'], 'messageID': row['messageID'], 'text': row['text']}
             failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
             failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', index=False)
+            #failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', mode='a', header=False, index=False) #-> Utilize em caso de treinamento interrompido
 
         df_messages.loc[index, 'text_translated'] = translated_text[-1]
         df_messages.to_parquet(f'data/processed/interim/interim_translated_{df_name[:-8]}.parquet', index=False)
