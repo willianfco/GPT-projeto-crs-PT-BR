@@ -11,7 +11,7 @@ key = os.getenv("MARITALK_KEY")
 
 model = maritalk.MariTalk(key=key)
 
-df_name = 'ds_006.parquet'
+df_name = 'ds_007.parquet'
 
 df = pd.read_parquet(f'data/raw/{df_name}')
 
@@ -91,7 +91,7 @@ def _custom_translation(text, row):
     split_text = text.split()
 
     # Caso 0 -> '' ou ' '
-    if not text:
+    if text == '':
         return ""
 
     # Caso 1 -> @123456
