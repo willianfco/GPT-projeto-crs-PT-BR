@@ -20,8 +20,10 @@ Lembrete: Não é necessário explicar a tradução, apenas traduza o texto de f
 
 Tradução: """
 
+failure_df = pd.DataFrame(columns=["conversationId", "messageID", "text"])
 
 def load_dataset(number: int) -> pd.DataFrame:
+    
     # if f'data/interim/interim_translated_ds_{number:03}.parquet' dont exist
 
     if f"interim_translated_ds_{number:03}.parquet" in os.listdir(
@@ -68,7 +70,7 @@ def _translate_remaining(text, row):
         except Exception as e:
             attempts += 1
             print(
-                f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {text}. Tentativa {attempts}. Erro: {e}"
+                f"Erro ao traduzir a mensagem: {text}. Tentativa {attempts}. Erro: {e}"
             )
             time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
@@ -87,6 +89,7 @@ def _translate_remaining(text, row):
 
 
 def _custom_translation(text, row):
+    global failure_df
     text = text.strip()
     split_text = text.split()
 
@@ -132,11 +135,11 @@ def _custom_translation(text, row):
 
 
 def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
+    global failure_df
     translated_text = []
     current_message_count = 0
     success_count = 0
     failure_count = 0
-    failure_df = pd.DataFrame(columns=["conversationId", "messageID", "text"])
 
     for index, row in df_messages.iterrows():
         success = False
@@ -211,7 +214,6 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
                 f"data/processed/interim/interim_translated_ds_{number:03}.parquet",
                 index=False,
             )
-            print('saved new parquet', index)
 
     return df_messages
 
