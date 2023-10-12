@@ -84,7 +84,7 @@ def _translate_remaining(text, row, number):
 
     return text
 
-def _custom_translation(text, row):
+def _custom_translation(text, row, number):
     global failure_df
     text = text.strip()
     split_text = text.split()
@@ -122,7 +122,7 @@ def _custom_translation(text, row):
     # Caso 6 -> @123456 is a great movie.
     elif text.startswith("@") and len(split_text) > 1 and split_text[0][1:].isdigit():
         text_after_number = " ".join(split_text[1:])
-        translated_text_after_number = _translate_remaining(text_after_number, row)
+        translated_text_after_number = _translate_remaining(text_after_number, row, number)
         return split_text[0] + " " + translated_text_after_number
 
     # Não se aplica a nenhuma das condições acima
