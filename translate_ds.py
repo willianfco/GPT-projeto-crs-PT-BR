@@ -19,8 +19,6 @@ Lembrete: Não é necessário explicar a tradução, apenas traduza o texto de f
 
 Tradução: """
 
-failure_df = pd.DataFrame(columns=["conversationId", "messageID", "text"])
-
 def load_dataset(number: int) -> pd.DataFrame:
     
     # check if the dataset has already started being translated
@@ -28,6 +26,7 @@ def load_dataset(number: int) -> pd.DataFrame:
         "data/processed/interim"
     ):
         df = pd.read_parquet(f"data/processed/interim/interim_translated_ds_{number:03}.parquet")
+        failure_df = pd.read_csv(f"data/processed/logs/failure_log_ds_{number:03}.csv")
 
     else:
         df = pd.read_parquet(f"data/raw/ds_{number:03}.parquet")
@@ -46,7 +45,10 @@ def load_dataset(number: int) -> pd.DataFrame:
 
         df = df_messages.copy()
         df["text_translated"] = None
-    return df
+
+        failure_df = pd.DataFrame(columns=["conversationId", "messageID", "text"])
+
+    return df, failure_df
 
 
 class TimeoutException(Exception):
@@ -65,8 +67,8 @@ def _translate_remaining(text, row, number):
 
     while attempts < max_attempts:
         try:
-            # 60 seconds timeout
-            signal.alarm(60)
+            # 45 seconds timeout
+            signal.alarm(20)
 
             answer = model.generate(
                 prompt, chat_mode=False, do_sample=False, max_tokens=4096
@@ -149,6 +151,10 @@ def _custom_translation(text, row, number):
         text_after_number = " ".join(split_text[1:])
         translated_text_after_number = _translate_remaining(text_after_number, row, number)
         return split_text[0] + " " + translated_text_after_number
+    
+    # Caso 7 -> String Vazia
+    elif not text:
+        return text
 
     # Não se aplica a nenhuma das condições acima
     else:
@@ -190,8 +196,8 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
             while not success and attempts < max_attempts:
                 try:
-                    # 60 seconds timeout
-                    signal.alarm(60)
+                    # 45 seconds timeout
+                    signal.alarm(20)
 
                     answer = model.generate(
                         prompt, chat_mode=False, do_sample=False, max_tokens=4096
@@ -212,7 +218,7 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
                 except TimeoutException:
                     attempts += 1
                     print(
-                        f"Erro de Timeout ao traduzir a mensagem: {row['text']}. Tentativa {attempts}."
+                        f"{current_message_count}/{total_messages}) Erro de Timeout ao traduzir a mensagem: {row['text']}. Tentativa {attempts}."
                     )
                     time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
@@ -304,8 +310,8 @@ def reconstruct_dataset(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Load dataset
-    number = 7
-    df = load_dataset(number=number)
+    number = 6
+    df, failure_df = load_dataset(number=number)
 
     # Initial prints
     print("Mensagens originais antes da tradução:")
