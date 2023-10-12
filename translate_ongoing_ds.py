@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv("config.env")
 
-KEY = os.getenv("KEY")
+KEY = os.getenv("MARITALK_KEY")
 model = maritalk.MariTalk(key=KEY)
 
 TEMPLATE = """Tarefa: Traduza o texto abaixo de forma natural para o Português do Brasil: 
@@ -89,11 +89,7 @@ def _custom_translation(text, row):
     global failure_df
     text = text.strip()
     split_text = text.split()
-
-    # Caso 0 -> ''
-    if text == '':
-        return text
-
+    
     # Caso 1 -> @123456
     if text.startswith("@") and text[1:].isdigit() and len(split_text) == 1:
         return text
@@ -271,7 +267,7 @@ def reconstruct_dataset(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Load dataset
-    number = 7
+    number = 6
     df = load_dataset(number=number)
 
     # Initial prints
