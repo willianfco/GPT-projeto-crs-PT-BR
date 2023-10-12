@@ -3,6 +3,7 @@ import maritalk
 import os
 import re
 import time
+import signal
 from dotenv import load_dotenv
 
 load_dotenv("config.env")
@@ -48,6 +49,14 @@ def load_dataset(number: int) -> pd.DataFrame:
     return df
 
 
+class TimeoutException(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutException
+
+signal.signal(signal.SIGALRM, timeout_handler)
+
 def _translate_remaining(text, row, number):
     global failure_df
     prompt = TEMPLATE.format(text)
@@ -56,16 +65,32 @@ def _translate_remaining(text, row, number):
 
     while attempts < max_attempts:
         try:
+            # 60 seconds timeout
+            signal.alarm(60)
+
             answer = model.generate(
                 prompt, chat_mode=False, do_sample=False, max_tokens=4096
             )
+
+            # Success, disable the alarm
+            signal.alarm(0)
 
             clean_answer = answer.strip().split("\n")[0]
             time.sleep(5)
 
             return clean_answer
 
+        except TimeoutException:
+            attempts += 1
+            print(
+                f"Erro de Timeout ao traduzir a mensagem: {text}. Tentativa {attempts}."
+            )
+            time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
+
         except Exception as e:
+            # Disable the alarm in case of other exceptions
+            signal.alarm(0)
+            
             attempts += 1
             print(
                 f"Erro ao traduzir a mensagem: {text}. Tentativa {attempts}. Erro: {e}"
@@ -165,12 +190,17 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
             while not success and attempts < max_attempts:
                 try:
+                    # 60 seconds timeout
+                    signal.alarm(60)
+
                     answer = model.generate(
                         prompt, chat_mode=False, do_sample=False, max_tokens=4096
                     )
 
-                    clean_answer = answer.strip().split("\n")[0]
+                    # Disable the alarm in case of success
+                    signal.alarm(0)
 
+                    clean_answer = answer.strip().split("\n")[0]
                     translated_text.append(clean_answer)
                     success = True
                     success_count += 1
@@ -179,14 +209,22 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
                         f"({current_message_count}/{total_messages}) Tradução bem-sucedida: {row['text']} -> {clean_answer}"
                     )
 
+                except TimeoutException:
+                    attempts += 1
+                    print(
+                        f"Erro de Timeout ao traduzir a mensagem: {row['text']}. Tentativa {attempts}."
+                    )
+                    time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
+
                 except Exception as e:
+                    # Desable the alarm in case of other exceptions
+                    signal.alarm(0)
+
                     attempts += 1
                     print(
                         f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}"
                     )
                     time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
-
-            time.sleep(5)
 
             if not success:
                 translated_text.append(row["text"])
@@ -211,6 +249,7 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
             )
 
     return df_messages
+
 
 
 def reaggregate_messages_and_translation(group):
@@ -265,7 +304,7 @@ def reconstruct_dataset(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Load dataset
-    number = 6
+    number = 7
     df = load_dataset(number=number)
 
     # Initial prints
