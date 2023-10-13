@@ -68,17 +68,17 @@ def _translate_remaining(text, row, number):
     while attempts < max_attempts:
         try:
             # 45 seconds timeout
-            signal.alarm(20)
+            # signal.alarm(20)
 
             answer = model.generate(
                 prompt, chat_mode=False, do_sample=False, max_tokens=4096
             )
 
             # Success, disable the alarm
-            signal.alarm(0)
+            # signal.alarm(0)
 
             clean_answer = answer.strip().split("\n")[0]
-            time.sleep(5)
+            # time.sleep(5)
 
             return clean_answer
 
@@ -87,11 +87,11 @@ def _translate_remaining(text, row, number):
             print(
                 f"Erro de Timeout ao traduzir a mensagem: {text}. Tentativa {attempts}."
             )
-            time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
+            # time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
         except Exception as e:
             # Disable the alarm in case of other exceptions
-            signal.alarm(0)
+            # signal.alarm(0)
             
             attempts += 1
             print(
@@ -197,14 +197,14 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
             while not success and attempts < max_attempts:
                 try:
                     # 45 seconds timeout
-                    signal.alarm(20)
+                    # signal.alarm(45)
 
                     answer = model.generate(
                         prompt, chat_mode=False, do_sample=False, max_tokens=4096
                     )
 
                     # Disable the alarm in case of success
-                    signal.alarm(0)
+                    # signal.alarm(0)
 
                     clean_answer = answer.strip().split("\n")[0]
                     translated_text.append(clean_answer)
@@ -224,7 +224,7 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
                 except Exception as e:
                     # Desable the alarm in case of other exceptions
-                    signal.alarm(0)
+                    # signal.alarm(0)
 
                     attempts += 1
                     print(
