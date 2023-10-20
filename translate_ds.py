@@ -68,7 +68,7 @@ def _translate_remaining(text, row, number):
     while attempts < max_attempts:
         try:
             # 45 seconds timeout
-            # signal.alarm(20)
+            # signal.alarm(45)
 
             answer = model.generate(
                 prompt, chat_mode=False, do_sample=False, max_tokens=4096
@@ -78,7 +78,7 @@ def _translate_remaining(text, row, number):
             # signal.alarm(0)
 
             clean_answer = answer.strip().split("\n")[0]
-            # time.sleep(5)
+            time.sleep(5)
 
             return clean_answer
 
@@ -87,7 +87,7 @@ def _translate_remaining(text, row, number):
             print(
                 f"Erro de Timeout ao traduzir a mensagem: {text}. Tentativa {attempts}."
             )
-            # time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
+            time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
 
         except Exception as e:
             # Disable the alarm in case of other exceptions
@@ -214,9 +214,12 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
                     print(
                         f"({current_message_count}/{total_messages}) Tradução bem-sucedida: {row['text']} -> {clean_answer}"
                     )
+                    time.sleep(5)
 
                 except TimeoutException:
                     attempts += 1
+                    failure_count += 1
+                    current_message_count += 1
                     print(
                         f"{current_message_count}/{total_messages}) Erro de Timeout ao traduzir a mensagem: {row['text']}. Tentativa {attempts}."
                     )
