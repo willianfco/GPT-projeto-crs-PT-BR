@@ -260,7 +260,6 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
     return df_messages
 
 
-
 def reaggregate_messages_and_translation(group):
     messages = group.apply(
         lambda x: {
