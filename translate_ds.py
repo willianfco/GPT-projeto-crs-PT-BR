@@ -46,11 +46,15 @@ def load_dataset(number: int) -> pd.DataFrame:
         )
         df_messages = df_messages.drop("messages", axis=1).reset_index()
 
+        df_messages["text_translated"] = None
+
         df = df_messages.copy()
     return df
 
 
-def _translate_remaining(text, row):
+def _translate_remaining(text, row, number):
+    print('translating remaining')
+    print(text)
     global failure_df
     prompt = TEMPLATE.format(text)
     max_attempts = 2
@@ -81,7 +85,7 @@ def _translate_remaining(text, row):
     }
     failure_df = pd.concat([failure_df, pd.DataFrame([new_row])], ignore_index=True)
     failure_df.to_csv(
-        f"data/processed/logs/failure_log_{df_name[:-8]}.csv", index=False
+        f"data/processed/logs/failure_log_{number:03}.csv", index=False
     )
     # failure_df.to_csv(f'data/processed/logs/failure_log_{df_name[:-8]}.csv', mode='a', header=False, index=False) #-> Utilize em caso de treinamento interrompido
 
@@ -92,12 +96,19 @@ def _custom_translation(text, row):
     global failure_df
     text = text.strip()
     split_text = text.split()
+    
+    print(split_text)
 
+    if text == "":
+        return text
+    
     # Caso 1 -> @123456
+    #print('case 1')
     if text.startswith("@") and text[1:].isdigit() and len(split_text) == 1:
         return text
 
     # Caso 2 -> Or @123456
+    #print('case 2')
     if len(split_text) == 2:
         if (
             split_text[0].lower() == "or"
@@ -107,6 +118,7 @@ def _custom_translation(text, row):
             return "Ou " + split_text[1]
 
     # Caso 3 -> And @123456
+    #print('case 3')
     if len(split_text) == 2:
         if (
             split_text[0].lower() == "and"
@@ -114,24 +126,41 @@ def _custom_translation(text, row):
             and split_text[1][1:].isdigit()
         ):
             return "E " + split_text[1]
+    
+    # caso 8, start with number - dataset 6
+    if str(split_text[0]).isdigit():
+        #print('case 8')
+        return split_text[1:]
 
     # Caso 4 -> ! ou ? ou . ou " " ou ""
+    
     elif re.match(r"^[!?. \"\"]+$", text):
+        #print('case 4')
         return text
 
     # Caso 5 -> hello ou Hello ou HELLO ou H E L L O...
+    
     elif text.lower().replace(" ", "") == "hello":
+        #print('case 5')
         return "Olá"
 
     # Caso 6 -> @123456 is a great movie.
+    
     elif text.startswith("@") and len(split_text) > 1 and split_text[0][1:].isdigit():
+        print('case 6')
         text_after_number = " ".join(split_text[1:])
-        translated_text_after_number = _translate_remaining(text_after_number, row)
+        translated_text_after_number = _translate_remaining(text_after_number, row, number)
         return split_text[0] + " " + translated_text_after_number
 
     # Não se aplica a nenhuma das condições acima
+
+    # caso 7, is integer
+    elif str(text).isdigit():
+        #print('case 7')
+        return str(text)
+    
     else:
-        return None
+        return ''
 
 
 def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
@@ -142,6 +171,7 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
     failure_count = 0
 
     for index, row in df_messages.iterrows():
+        
         success = False
         max_attempts = 2
         attempts = 0
@@ -149,25 +179,34 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
         if row["text_translated"] != None:
             continue
 
-        custom_translated = _custom_translation(row["text"], row)
+        if input('pular:') == '1':
+            continue
 
-        if custom_translated:
+        #print('translating')
+        print(index, row['text'])
+        custom_translated = _custom_translation(row["text"], row)
+        print(custom_translated)
+        print('okokok')
+        if custom_translated or row['text'] == '':
+            print('custom translation')
             translated_text.append(custom_translated)
             current_message_count += 1
             success_count += 1
             print(
                 f"({current_message_count}/{total_messages}) Tradução customizada: {row['text']} -> {custom_translated}"
             )
-            df_messages.loc[index, "text_translated"] = translated_text[-1]
+            df_messages.loc[index, "text_translated"] = str(translated_text[-1]) # Debug
             df_messages.to_parquet(
                 f"data/processed/interim/interim_translated_ds_{number:03}.parquet",
                 index=False,
             )
 
         else:
+            print('template translation')
             prompt = TEMPLATE.format(row["text"])
 
             while not success and attempts < max_attempts:
+                print('trying to translate')
                 try:
                     answer = model.generate(
                         prompt, chat_mode=False, do_sample=False, max_tokens=4096
@@ -184,15 +223,17 @@ def process(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
                     )
 
                 except Exception as e:
+                    print('fail')
                     attempts += 1
                     print(
                         f"({current_message_count}/{total_messages}) Erro ao traduzir a mensagem: {row['text']}. Tentativa {attempts}. Erro: {e}"
                     )
                     time.sleep(5)  # Esperar 5 segundos antes de tentar novamente
-
+            #print('sleep')
             time.sleep(5)
 
             if not success:
+                #print('failure translation')
                 translated_text.append(row["text"])
                 failure_count += 1
                 current_message_count += 1
@@ -270,7 +311,8 @@ def reconstruct_dataset(df_messages: pd.DataFrame, number: int) -> pd.DataFrame:
 
 if __name__ == "__main__":
     # Load dataset
-    number = 4
+    number = 6
+    print('dataset number: ', number)
     df = load_dataset(number=number)
 
     # Initial prints
