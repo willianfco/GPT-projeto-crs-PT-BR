@@ -1,3 +1,6 @@
 /.env
 /venv
-
+config.env
+data
+data/*
+venv_crs
